@@ -23,7 +23,6 @@ type Lexable[T Tokenable] interface {
 // when parsing a prefix expression. It is easily aliased so that
 // you don't have to keep typing out the generic types:
 type PrefixContext[N any, T Tokenable, L Lexable[T]] struct {
-	Parser Parseable[N, T, L]
 	Lexer  L
 	Token  T
 }
@@ -32,7 +31,6 @@ type PrefixContext[N any, T Tokenable, L Lexable[T]] struct {
 // when parsing an infix expression. It is easily aliased so that
 // you don't have to keep typing out the generic types:
 type InfixContext[N any, T Tokenable, L Lexable[T]] struct {
-	Parser Parseable[N, T, L]
 	Lexer  L
 	Left   N
 	Token  T
@@ -59,7 +57,7 @@ type Parseable[N any, T Tokenable, L Lexable[T]] interface {
 
 func ParseExpression[N any, T Tokenable, L Lexable[T]](lex L, p Parseable[N, T, L], rbp uint) (*N, error) {
 	t := lex.Next()
-	prefixContext := PrefixContext[N, T, L]{Parser: p, Lexer: lex, Token: t}
+	prefixContext := PrefixContext[N, T, L]{Lexer: lex, Token: t}
 	left, err := p.ParsePrefix(prefixContext)
 	if err != nil {
 		return left, err
@@ -72,7 +70,7 @@ func ParseExpression[N any, T Tokenable, L Lexable[T]](lex L, p Parseable[N, T, 
 	t = lex.Peek()
 	for rbp < p.BindPower(*left, t) {
 		lex.MarkRead(t)
-		infixContext := InfixContext[N, T, L]{Parser: p, Lexer: lex, Left: *left, Token: t}
+		infixContext := InfixContext[N, T, L]{Lexer: lex, Left: *left, Token: t}
 		left, err = p.ParseInfix(infixContext)
 		if err != nil {
 			return left, err
@@ -137,7 +135,7 @@ func (p PrattParser[N, T, L]) DefineBinaryOperator(
 ) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level)
+		right, err := ParseExpression[N, T, L](ctx.Lexer, p, level)
 		if err != nil {
 			return nil, err
 		}
@@ -153,7 +151,7 @@ func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(
 ) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level-1)
+		right, err := ParseExpression[N, T, L](ctx.Lexer, p, level-1)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +163,7 @@ func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(
 func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, unaryExpressionCreator func(t T, right N) N) {
 	p.SetBindPower(tokenKind, level)
 	p.AddPrefixHandler(tokenKind, func(ctx PrefixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level)
+		right, err := ParseExpression[N, T, L](ctx.Lexer, p, level)
 		if err != nil {
 			return nil, err
 		}
@@ -174,13 +172,13 @@ func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, 
 	})
 }
 
-func ParseList[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
-	p P,
+func ParseList[N any, T Tokenable, L Lexable[T]](
+	p Parseable[N, T, L],
 	lex L,
 	isOpener func(t T) bool,
 	isCloser func(t T) bool,
 	isSeparator func(t T) bool,
-	elementParser func(parser P, lex L) (*N, error),
+	elementParser func() (*N, error),
 ) ([]N, error) {
 	var result []N
 
@@ -198,7 +196,7 @@ func ParseList[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
 		}
 
 		// parse element:
-		element, err := elementParser(p, lex)
+		element, err := elementParser()
 		if err != nil {
 			return nil, err
 		}
@@ -225,13 +223,13 @@ func ParseList[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
 }
 
 // ParseListSimple: takes similar parameters as ParseList, but each parameter is not a predicate, but a single token kind:
-func ParseListSimple[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
-	p P,
+func ParseListSimple[N any, T Tokenable, L Lexable[T]](
+	p Parseable[N, T, L],
 	lex L,
 	opener string,
 	closer string,
 	separator string,
-	elementParser func(parser P, lex L) (*N, error),
+	elementParser func() (*N, error),
 ) ([]N, error) {
 	return ParseList(
 		p,
