@@ -85,6 +85,7 @@ func (l ContrivedLexer) MarkRead(t ContrivedToken) {
 type MyPrattParser = PrattParser[float64, ContrivedToken, ContrivedLexer]
 type MyInfixContext = InfixContext[float64, ContrivedToken, ContrivedLexer]
 type MyPrefixContext = PrefixContext[float64, ContrivedToken, ContrivedLexer]
+type MyBinaryExpressionContext = BinaryExpressionContext[float64, ContrivedToken]
 
 func NewSimplePrattParser() MyPrattParser {
 	p := NewPrattParser[float64, ContrivedToken, ContrivedLexer]()
@@ -110,7 +111,7 @@ func NewSimplePrattParser() MyPrattParser {
 
 	p.SetBindPower("(", bp)
 	p.AddPrefixHandler("(", func(ctx MyPrefixContext) (*float64, error) {
-		result, err := ParseExpression[float64, ContrivedToken, ContrivedLexer](ctx.Lexer, ctx.Parser, 0)
+		result, err := ParseExpression(ctx.Lexer, ctx.Parser, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -122,13 +123,13 @@ func NewSimplePrattParser() MyPrattParser {
 	})
 
 	bp += 10
-	p.DefineBinaryOperator("+", bp, func(left float64, t ContrivedToken, right float64) float64 {
-		return left + right
+	p.DefineBinaryOperator("+", bp, func(ctx MyBinaryExpressionContext) float64 {
+		return ctx.Left + ctx.Right
 	})
 
 	bp += 10
-	p.DefineBinaryOperator("*", bp, func(left float64, t ContrivedToken, right float64) float64 {
-		return left * right
+	p.DefineBinaryOperator("*", bp, func(ctx MyBinaryExpressionContext) float64 {
+		return ctx.Left * ctx.Right
 	})
 
 	return p

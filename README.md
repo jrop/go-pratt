@@ -30,6 +30,7 @@ interface MyNode {
 type MyPrattParser = pratt.PrattParser[MyNode, MyToken, MyLexer]
 type MyPrefixContext = pratt.PrefixContext[MyNode, MyToken, MyLexer]
 type MyInfixContext = pratt.InfixContext[MyNode, MyToken, MyLexer]
+type MyBinaryExpressionContext = pratt.BinaryExpressionContext[MyNode, MyToken]
 
 func NewPrattParser() MyPrattParser {
   p := pratt.NewPrattParser[MyNode, MyToken, MyLexer]()
@@ -49,13 +50,13 @@ func NewPrattParser() MyPrattParser {
 	})
 
 	bp += 10
-	p.DefineBinaryOperator("+", bp, func(left MyNode, t MyToken, right MyNode) MyNode {
-		return makeBinaryExpression(left, "+", right)
+	p.DefineBinaryOperator("+", bp, func(ctx MyBinaryExpressionContext) MyNode {
+		return makeBinaryExpression(ctx.Left, "+", ctx.Right)
 	})
 
 	bp += 10
-	p.DefineBinaryOperator("*", bp, func(left MyNode, t MyToken, right MyNode) MyNode {
-		return makeBinaryExpression(left, "*", right)
+	p.DefineBinaryOperator("*", bp, func(ctx MyBinaryExpressionContext) MyNode {
+		return makeBinaryExpression(ctx.Left, "*", ctx.Right)
 	})
   
   // There are many more available utilities you can use that are not enumerated

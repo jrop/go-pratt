@@ -38,6 +38,15 @@ type InfixContext[N any, T Tokenable, L Lexable[T]] struct {
 	Token  T
 }
 
+// BinaryExpressionContext is the context passed to a binary expression
+// handler when parsing a binary expression. It is easily aliased so that
+// you don't have to keep typing out the generic types:
+type BinaryExpressionContext[N any, T Tokenable] struct {
+	Left  N
+	Token T
+	Right N
+}
+
 // An interface that provides the necessary methods for a Pratt
 // parser to work. The parser will call BindPower to determine
 // the precedence of the next token, and then call ParsePrefix
@@ -121,26 +130,34 @@ func (p PrattParser[N, T, L]) AddInfixHandler(tokenKind string, handler func(Inf
 	p.infixHandlers[tokenKind] = handler
 }
 
-func (p PrattParser[N, T, L]) DefineBinaryOperator(tokenKind string, level uint, binaryExpressionCreator func(left N, t T, right N) N) {
+func (p PrattParser[N, T, L]) DefineBinaryOperator(
+	tokenKind string,
+	level uint,
+	binaryExpressionCreator func(BinaryExpressionContext[N, T]) N,
+) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
 		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level)
 		if err != nil {
 			return nil, err
 		}
-		var result N = binaryExpressionCreator(ctx.Left, ctx.Token, *right)
+		var result N = binaryExpressionCreator(BinaryExpressionContext[N, T]{ctx.Left, ctx.Token, *right})
 		return &result, nil
 	})
 }
 
-func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(tokenKind string, level uint, binaryExpressionCreator func(left N, t T, right N) N) {
+func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(
+	tokenKind string,
+	level uint,
+	binaryExpressionCreator func(BinaryExpressionContext[N, T]) N,
+) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
 		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level-1)
 		if err != nil {
 			return nil, err
 		}
-		var result N = binaryExpressionCreator(ctx.Left, ctx.Token, *right)
+		var result N = binaryExpressionCreator(BinaryExpressionContext[N, T]{ctx.Left, ctx.Token, *right})
 		return &result, nil
 	})
 }
