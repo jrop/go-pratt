@@ -19,43 +19,52 @@ type Lexable[T Tokenable] interface {
 // - for callback-style functions that recieve `N`, there is no need for that
 //   to be a pointer, so it is left as a value-type
 
+// PrefixContext is the context passed to a prefix handler
+// when parsing a prefix expression. It is easily aliased so that
+// you don't have to keep typing out the generic types:
 type PrefixContext[N any, T Tokenable, L Lexable[T]] struct {
-	Parser PrattParser[N, T, L]
+	Parser Parseable[N, T, L]
 	Lexer  L
 	Token  T
 }
 
+// InfixContext is the context passed to an infix handler
+// when parsing an infix expression. It is easily aliased so that
+// you don't have to keep typing out the generic types:
 type InfixContext[N any, T Tokenable, L Lexable[T]] struct {
-	Parser PrattParser[N, T, L]
+	Parser Parseable[N, T, L]
 	Lexer  L
 	Left   N
 	Token  T
 }
 
+// An interface that provides the necessary methods for a Pratt
+// parser to work. The parser will call BindPower to determine
+// the precedence of the next token, and then call ParsePrefix
+// or ParseInfix to drive forward expression parsing.
 type Parseable[N any, T Tokenable, L Lexable[T]] interface {
 	BindPower(left N, t T) uint
-	ParsePrefix(lex L, t T) (*N, error)
-	ParseInfix(lex L, left N, t T) (*N, error)
+	ParsePrefix(PrefixContext[N, T, L]) (*N, error)
+	ParseInfix(InfixContext[N, T, L]) (*N, error)
 }
 
 func ParseExpression[N any, T Tokenable, L Lexable[T]](lex L, p Parseable[N, T, L], rbp uint) (*N, error) {
 	t := lex.Next()
-	left, err := p.ParsePrefix(lex, t)
+	prefixContext := PrefixContext[N, T, L]{Parser: p, Lexer: lex, Token: t}
+	left, err := p.ParsePrefix(prefixContext)
 	if err != nil {
 		return left, err
 	}
 
-	// while the next precedence is greater than
-	// the current precedence, keep going for
-	// example, say rbp is `+`, and the next token
-	// is `*`, we can handle that in the current
-	// stack, otherwise we return and let a
-	// higher-up-in-the-stack operation handle the
-	// parsing:
+	// While the next precedence is greater than the current precedence, keep
+	// going. For example, say rbp is `+`, and the next token is `*`, we can
+	// handle that in the current stack, otherwise we return and let a
+	// higher-up-in-the-stack operation handle the parsing:
 	t = lex.Peek()
 	for rbp < p.BindPower(*left, t) {
 		lex.MarkRead(t)
-		left, err = p.ParseInfix(lex, *left, t)
+		infixContext := InfixContext[N, T, L]{Parser: p, Lexer: lex, Left: *left, Token: t}
+		left, err = p.ParseInfix(infixContext)
 		if err != nil {
 			return left, err
 		}
@@ -64,18 +73,24 @@ func ParseExpression[N any, T Tokenable, L Lexable[T]](lex L, p Parseable[N, T, 
 	return left, nil
 }
 
+// Now we are going to implement a Pratt Parser **Builder**. This is a utility
+// that allows you to define a Pratt parser in a declarative way, rather than
+// having to implement the Parseable interface yourself. In order to make the outer
+// struct copyable in an efficient way, we'll use a pointer to a struct that
+// contains the actual data.
+
 type prattParserData[N any, T Tokenable, L Lexable[T]] struct {
 	precedenceLevels map[string]uint
 	prefixHandlers   map[string]func(PrefixContext[N, T, L]) (*N, error)
 	infixHandlers    map[string]func(InfixContext[N, T, L]) (*N, error)
 }
 type PrattParser[N any, T Tokenable, L Lexable[T]] struct {
-	data *prattParserData[N, T, L]
+	*prattParserData[N, T, L]
 }
 
 func NewPrattParser[N any, T Tokenable, L Lexable[T]]() PrattParser[N, T, L] {
 	return PrattParser[N, T, L]{
-		data: &prattParserData[N, T, L]{
+		&prattParserData[N, T, L]{
 			precedenceLevels: make(map[string]uint),
 			prefixHandlers:   make(map[string]func(PrefixContext[N, T, L]) (*N, error)),
 			infixHandlers:    make(map[string]func(InfixContext[N, T, L]) (*N, error)),
@@ -84,14 +99,14 @@ func NewPrattParser[N any, T Tokenable, L Lexable[T]]() PrattParser[N, T, L] {
 }
 
 func (p PrattParser[N, T, L]) GetBindPower(left N, t T) uint {
-	if level, ok := p.data.precedenceLevels[t.Kind()]; ok {
+	if level, ok := p.precedenceLevels[t.Kind()]; ok {
 		return level
 	}
 	return 0
 }
 
 func (p *PrattParser[N, T, L]) SetBindPower(tokenKind string, level uint) {
-	p.data.precedenceLevels[tokenKind] = level
+	p.precedenceLevels[tokenKind] = level
 }
 
 func (p PrattParser[N, T, L]) SetStopToken(tokenKind string) {
@@ -99,17 +114,17 @@ func (p PrattParser[N, T, L]) SetStopToken(tokenKind string) {
 }
 
 func (p PrattParser[N, T, L]) AddPrefixHandler(tokenKind string, handler func(PrefixContext[N, T, L]) (*N, error)) {
-	p.data.prefixHandlers[tokenKind] = handler
+	p.prefixHandlers[tokenKind] = handler
 }
 
 func (p PrattParser[N, T, L]) AddInfixHandler(tokenKind string, handler func(InfixContext[N, T, L]) (*N, error)) {
-	p.data.infixHandlers[tokenKind] = handler
+	p.infixHandlers[tokenKind] = handler
 }
 
 func (p PrattParser[N, T, L]) DefineBinaryOperator(tokenKind string, level uint, binaryExpressionCreator func(left N, t T, right N) N) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression[N, T, L](ctx.Lexer, ctx.Parser, level)
+		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level)
 		if err != nil {
 			return nil, err
 		}
@@ -121,7 +136,7 @@ func (p PrattParser[N, T, L]) DefineBinaryOperator(tokenKind string, level uint,
 func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(tokenKind string, level uint, binaryExpressionCreator func(left N, t T, right N) N) {
 	p.SetBindPower(tokenKind, level)
 	p.AddInfixHandler(tokenKind, func(ctx InfixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression[N, T, L](ctx.Lexer, ctx.Parser, level-1)
+		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level-1)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +148,7 @@ func (p PrattParser[N, T, L]) DefineBinaryOperatorRassoc(tokenKind string, level
 func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, unaryExpressionCreator func(t T, right N) N) {
 	p.SetBindPower(tokenKind, level)
 	p.AddPrefixHandler(tokenKind, func(ctx PrefixContext[N, T, L]) (*N, error) {
-		right, err := ParseExpression[N, T, L](ctx.Lexer, ctx.Parser, level)
+		right, err := ParseExpression(ctx.Lexer, ctx.Parser, level)
 		if err != nil {
 			return nil, err
 		}
@@ -142,7 +157,8 @@ func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, 
 	})
 }
 
-func (p PrattParser[N, T, L]) ParseList(
+func ParseList[N any, T Tokenable, L Lexable[T]](
+	p PrattParser[N, T, L],
 	lex L,
 	isOpener func(t T) bool,
 	isCloser func(t T) bool,
@@ -192,14 +208,16 @@ func (p PrattParser[N, T, L]) ParseList(
 }
 
 // ParseListSimple: takes similar parameters as ParseList, but each parameter is not a predicate, but a single token kind:
-func (p PrattParser[N, T, L]) ParseListSimple(
+func ParseListSimple[N any, T Tokenable, L Lexable[T]](
+	p PrattParser[N, T, L],
 	lex L,
 	opener string,
 	closer string,
 	separator string,
 	elementParser func(parser PrattParser[N, T, L], lex L) (*N, error),
 ) ([]N, error) {
-	return p.ParseList(
+	return ParseList(
+		p,
 		lex,
 		func(t T) bool { return t.Kind() == opener },
 		func(t T) bool { return t.Kind() == closer },
@@ -213,18 +231,16 @@ func (p PrattParser[N, T, L]) BindPower(left N, t T) uint {
 	return p.GetBindPower(left, t)
 }
 
-func (p PrattParser[N, T, L]) ParsePrefix(lex L, t T) (*N, error) {
-	if handler, ok := p.data.prefixHandlers[t.Kind()]; ok {
-		ctx := PrefixContext[N, T, L]{Parser: p, Lexer: lex, Token: t}
+func (p PrattParser[N, T, L]) ParsePrefix(ctx PrefixContext[N, T, L]) (*N, error) {
+	if handler, ok := p.prefixHandlers[ctx.Token.Kind()]; ok {
 		return handler(ctx)
 	}
-	return nil, fmt.Errorf("unexpected token in prefix posision: %s", t.Kind())
+	return nil, fmt.Errorf("unexpected token in prefix posision: %s", ctx.Token.Kind())
 }
 
-func (p PrattParser[N, T, L]) ParseInfix(lex L, left N, t T) (*N, error) {
-	if handler, ok := p.data.infixHandlers[t.Kind()]; ok {
-		ctx := InfixContext[N, T, L]{Parser: p, Lexer: lex, Left: left, Token: t}
+func (p PrattParser[N, T, L]) ParseInfix(ctx InfixContext[N, T, L]) (*N, error) {
+	if handler, ok := p.infixHandlers[ctx.Token.Kind()]; ok {
 		return handler(ctx)
 	}
-	return nil, fmt.Errorf("unexpected token in infix position: %s", t.Kind())
+	return nil, fmt.Errorf("unexpected token in infix position: %s", ctx.Token.Kind())
 }
