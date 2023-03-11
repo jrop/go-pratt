@@ -174,13 +174,13 @@ func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, 
 	})
 }
 
-func ParseList[N any, T Tokenable, L Lexable[T]](
-	p PrattParser[N, T, L],
+func ParseList[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
+	p P,
 	lex L,
 	isOpener func(t T) bool,
 	isCloser func(t T) bool,
 	isSeparator func(t T) bool,
-	elementParser func(parser PrattParser[N, T, L], lex L) (*N, error),
+	elementParser func(parser P, lex L) (*N, error),
 ) ([]N, error) {
 	var result []N
 
@@ -225,13 +225,13 @@ func ParseList[N any, T Tokenable, L Lexable[T]](
 }
 
 // ParseListSimple: takes similar parameters as ParseList, but each parameter is not a predicate, but a single token kind:
-func ParseListSimple[N any, T Tokenable, L Lexable[T]](
-	p PrattParser[N, T, L],
+func ParseListSimple[N any, T Tokenable, L Lexable[T], P Parseable[N, T, L]](
+	p P,
 	lex L,
 	opener string,
 	closer string,
 	separator string,
-	elementParser func(parser PrattParser[N, T, L], lex L) (*N, error),
+	elementParser func(parser P, lex L) (*N, error),
 ) ([]N, error) {
 	return ParseList(
 		p,
