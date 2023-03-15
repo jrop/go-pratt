@@ -49,7 +49,7 @@ type ContrivedLexer struct {
 	state *lexerState
 }
 
-func NewContrivedLexer(tokens []string) ContrivedLexer {
+func NewContrivedLexer(tokens ...string) ContrivedLexer {
 	tkns := make([]ContrivedToken, len(tokens))
 	for i, t := range tokens {
 		tkns[i] = NewContrivedToken(t, uint(i))
@@ -140,7 +140,7 @@ func parseExpression(l ContrivedLexer, p MyPrattParser) (*float64, error) {
 }
 
 func TestParser(t *testing.T) {
-	l := NewContrivedLexer([]string{"1", "+", "2", "*", "3"})
+	l := NewContrivedLexer("1", "+", "2", "*", "3")
 	p := NewSimplePrattParser()
 
 	result, err := parseExpression(l, p)
@@ -151,7 +151,7 @@ func TestParser(t *testing.T) {
 		t.Errorf("expected 7, got %v", *result)
 	}
 
-	l = NewContrivedLexer([]string{"1", "*", "2", "+", "3"})
+	l = NewContrivedLexer("1", "*", "2", "+", "3")
 	result, err = parseExpression(l, p)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -160,7 +160,7 @@ func TestParser(t *testing.T) {
 		t.Errorf("expected 5, got %v", *result)
 	}
 
-	l = NewContrivedLexer([]string{"(", "1", "+", "2", ")", "*", "3"})
+	l = NewContrivedLexer("(", "1", "+", "2", ")", "*", "3")
 	result, err = parseExpression(l, p)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
