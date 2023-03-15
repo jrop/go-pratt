@@ -111,7 +111,7 @@ func NewSimplePrattParser() MyPrattParser {
 
 	p.SetBindPower("(", bp)
 	p.AddPrefixHandler("(", func(ctx MyPrefixContext) (*float64, error) {
-		result, err := ParseExpression(ctx.Lexer, ctx.Parser, 0)
+		result, err := p.ParseExpression(ctx.Lexer, 0)
 		if err != nil {
 			return nil, err
 		}

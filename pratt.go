@@ -172,6 +172,10 @@ func (p PrattParser[N, T, L]) DefineUnaryOperator(tokenKind string, level uint, 
 	})
 }
 
+func (p PrattParser[N, T, L]) ParseExpression(lexer L, rbp uint) (*N, error) {
+	return ParseExpression[N, T, L](lexer, p, rbp)
+}
+
 func ParseList[N any, T Tokenable, L Lexable[T]](
 	p Parseable[N, T, L],
 	lex L,
